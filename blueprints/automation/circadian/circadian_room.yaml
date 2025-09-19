@@ -153,7 +153,7 @@ blueprint:
         number:
           min: 1
           max: 240
-          step: 5
+          step: 1
           mode: slider
     update_interval_minutes:
       name: Update cadence (minutes)
@@ -172,14 +172,17 @@ trigger_variables:
   freeze_toggle_entity: !input freeze_toggle
   has_freeze_button: "{{ freeze_button_entity is not none }}"
   has_freeze_toggle: "{{ freeze_toggle_entity is not none }}"
+  update_interval_minutes: !input update_interval_minutes
 trigger:
   - platform: state
     id: turned_on
     entity_id: !input primary_light
     to: "on"
-  - platform: time_pattern
+  - platform: template
     id: scheduled
-    minutes: "/!input update_interval_minutes"
+    value_template: >-
+      {% set interval = update_interval_minutes | int %}
+      {{ interval > 0 and now().second == 0 and (now().minute % interval == 0) }}
   - platform: sun
     event: sunrise
     id: sunrise
