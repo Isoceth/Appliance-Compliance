@@ -172,17 +172,14 @@ trigger_variables:
   freeze_toggle_entity: !input freeze_toggle
   has_freeze_button: "{{ freeze_button_entity is not none }}"
   has_freeze_toggle: "{{ freeze_toggle_entity is not none }}"
-  update_interval_minutes: !input update_interval_minutes
 trigger:
   - platform: state
     id: turned_on
     entity_id: !input primary_light
     to: "on"
-  - platform: template
-    id: scheduled
-    value_template: >-
-      {% set interval = update_interval_minutes | int %}
-      {{ interval > 0 and now().second == 0 and (now().minute % interval == 0) }}
+  - platform: time_pattern
+    id: cadence_tick
+    minutes: "/1"
   - platform: sun
     event: sunrise
     id: sunrise
@@ -217,6 +214,7 @@ variables:
   freeze_toggle_entity: !input freeze_toggle
   freeze_until_entity: !input freeze_until
   freeze_duration_minutes: !input freeze_duration
+  update_interval_minutes: !input update_interval_minutes
   morning_start_time: !input morning_start
   morning_peak_end_time: !input morning_peak_end
   night_transition_time: !input night_transition
@@ -232,6 +230,18 @@ variables:
   evening_end_kelvin: !input evening_end_kelvin
   night_color_kelvin: !input night_color_kelvin
 action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% if trigger.id == 'cadence_tick' %}
+                {% set interval = update_interval_minutes | int %}
+                {{ interval > 0 and (now().minute % interval) != 0 }}
+              {% else %}
+                false
+              {% endif %}
+        sequence:
+          - stop: "Waiting for scheduled interval"
   - variables:
       now_ts: "{{ as_timestamp(now()) }}"
   - variables:
