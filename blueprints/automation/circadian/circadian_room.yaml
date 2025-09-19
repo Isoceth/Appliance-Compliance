@@ -231,91 +231,6 @@ variables:
 action:
   - variables:
       now_ts: "{{ as_timestamp(now()) }}"
-  - choose:
-      - conditions:
-          - condition: trigger
-            id: freeze_request
-        sequence:
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
-                sequence:
-                  - service: input_datetime.set_datetime
-                    target:
-                      entity_id: !input freeze_until
-                    data:
-                      timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
-          - stop: "Timed freeze started"
-      - conditions:
-          - condition: trigger
-            id: freeze_toggle_on
-        sequence:
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
-                sequence:
-                  - service: input_datetime.set_datetime
-                    target:
-                      entity_id: !input freeze_until
-                    data:
-                      timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
-          - stop: "Manual freeze engaged"
-      - conditions:
-          - condition: trigger
-            id: manual_change
-          - condition: template
-            value_template: "{{ trigger.from_state is not none }}"
-          - condition: template
-            value_template: "{{ trigger.from_state.state == 'on' and trigger.to_state.state == 'on' }}"
-          - condition: template
-            value_template: "{{ trigger.to_state.context.user_id is not none }}"
-          - condition: template
-            value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
-          - condition: template
-            value_template: >-
-              {% set attrs = trigger.to_state.attributes %}
-              {% set prev = trigger.from_state.attributes if trigger.from_state else {} %}
-              {% set watched = ['brightness','color_temp','color_temp_kelvin','hs_color','rgb_color','xy_color'] %}
-              {% set ns = namespace(changed=false) %}
-              {% for key in watched %}
-                {% if attrs.get(key) is not none and attrs.get(key) != prev.get(key) %}
-                  {% set ns.changed = true %}
-                {% endif %}
-              {% endfor %}
-              {{ ns.changed }}
-        sequence:
-          - service: input_datetime.set_datetime
-            target:
-              entity_id: !input freeze_until
-            data:
-              timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
-          - stop: "Manual adjustment freeze"
-  - variables:
-      freeze_toggle_active: >-
-        {% if freeze_toggle_entity %}
-          {{ is_state(freeze_toggle_entity, 'on') }}
-        {% else %}
-          false
-        {% endif %}
-      freeze_until_ts: >-
-        {% if freeze_until_entity %}
-          {% set raw = states(freeze_until_entity) %}
-          {% if raw not in ['unknown', 'unavailable', ''] %}
-            {{ as_timestamp(raw) }}
-          {% else %}
-            0
-          {% endif %}
-        {% else %}
-          0
-        {% endif %}
-      freeze_active: "{{ freeze_toggle_active or (freeze_until_ts > now_ts) }}"
-  - if:
-      - condition: template
-        value_template: "{{ freeze_active }}"
-    then:
-      - stop: "Automation frozen"
   - variables:
       bright_start_ts: "{{ as_timestamp(today_at(morning_start_time)) }}"
       morning_peak_end_ts: "{{ as_timestamp(today_at(morning_peak_end_time)) }}"
@@ -409,6 +324,149 @@ action:
       brightness_int: "{{ brightness_target | int }}"
       color_temp_int: "{{ color_temp_target | int }}"
       transition_int: "{{ transition_seconds | int }}"
+      expected_brightness_level: >-
+        {% set pct = brightness_int | int %}
+        {% set pct_clamped = [pct, 100] | min %}
+        {% set pct_safe = [pct_clamped, 0] | max %}
+        {{ ((pct_safe | float) / 100 * 255) | round(0) | int }}
+      manual_detect_brightness_tolerance: 8
+      manual_detect_kelvin_tolerance: 150
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: freeze_request
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
+                sequence:
+                  - service: input_datetime.set_datetime
+                    target:
+                      entity_id: !input freeze_until
+                    data:
+                      timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
+          - stop: "Timed freeze started"
+      - conditions:
+          - condition: trigger
+            id: freeze_toggle_on
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
+                sequence:
+                  - service: input_datetime.set_datetime
+                    target:
+                      entity_id: !input freeze_until
+                    data:
+                      timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
+          - stop: "Manual freeze engaged"
+      - conditions:
+          - condition: trigger
+            id: manual_change
+          - condition: template
+            value_template: "{{ trigger.from_state is not none }}"
+          - condition: template
+            value_template: "{{ trigger.from_state.state == 'on' and trigger.to_state.state == 'on' }}"
+          - condition: template
+            value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
+          - condition: template
+            value_template: >-
+              {% set attrs = trigger.to_state.attributes %}
+              {% set prev = trigger.from_state.attributes if trigger.from_state else {} %}
+              {% set watched = ['brightness','color_temp','color_temp_kelvin','hs_color','rgb_color','xy_color'] %}
+              {% set ns = namespace(changed=false) %}
+              {% for key in watched %}
+                {% if attrs.get(key) is not none and attrs.get(key) != prev.get(key) %}
+                  {% set ns.changed = true %}
+                {% endif %}
+              {% endfor %}
+              {{ ns.changed }}
+          - condition: template
+            value_template: >-
+              {% set attrs = trigger.to_state.attributes %}
+              {% set prev = trigger.from_state.attributes if trigger.from_state else {} %}
+              {% set brightness_changed = attrs.get('brightness') is not none and attrs.get('brightness') != prev.get('brightness') %}
+              {% set color_mired_changed = attrs.get('color_temp') is not none and attrs.get('color_temp') != prev.get('color_temp') %}
+              {% set color_kelvin_changed = attrs.get('color_temp_kelvin') is not none and attrs.get('color_temp_kelvin') != prev.get('color_temp_kelvin') %}
+              {% set color_temp_changed = color_mired_changed or color_kelvin_changed %}
+              {% set manual_color_changed = namespace(flag=false) %}
+              {% for key in ['hs_color','rgb_color','xy_color'] %}
+                {% if attrs.get(key) is not none and attrs.get(key) != prev.get(key) %}
+                  {% set manual_color_changed.flag = true %}
+                {% endif %}
+              {% endfor %}
+              {% set has_user = trigger.to_state.context.user_id is not none %}
+              {% set brightness_override = false %}
+              {% if brightness_changed %}
+                {% set actual = attrs.get('brightness') %}
+                {% if actual is not none %}
+                  {% set expected = expected_brightness_level %}
+                  {% if expected is number %}
+                    {% set diff = ((actual | int) - expected) | abs %}
+                    {% if diff > manual_detect_brightness_tolerance %}
+                      {% set brightness_override = true %}
+                    {% endif %}
+                  {% else %}
+                    {% set brightness_override = true %}
+                  {% endif %}
+                {% else %}
+                  {% set brightness_override = true %}
+                {% endif %}
+              {% endif %}
+              {% set kelvin_override = false %}
+              {% if color_temp_changed %}
+                {% set kelvin = attrs.get('color_temp_kelvin') %}
+                {% if kelvin is none %}
+                  {% set mired = attrs.get('color_temp') %}
+                  {% if mired is not none and mired | float > 0 %}
+                    {% set kelvin = (1000000 / (mired | float)) | round(0) %}
+                  {% endif %}
+                {% endif %}
+                {% if kelvin is none %}
+                  {% set kelvin_override = true %}
+                {% else %}
+                  {% set diff = ((kelvin | int) - (color_temp_int | int)) | abs %}
+                  {% if diff > manual_detect_kelvin_tolerance %}
+                    {% set kelvin_override = true %}
+                  {% endif %}
+                {% endif %}
+              {% endif %}
+              {% set any_color_change = manual_color_changed.flag %}
+              {% set change_detected = brightness_changed or color_temp_changed or any_color_change %}
+              {{ (has_user and change_detected) or brightness_override or kelvin_override or any_color_change }}
+        sequence:
+          - service: input_datetime.set_datetime
+            target:
+              entity_id: !input freeze_until
+            data:
+              timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
+          - stop: "Manual adjustment freeze"
+  - variables:
+      freeze_toggle_active: >-
+        {% if freeze_toggle_entity %}
+          {{ is_state(freeze_toggle_entity, 'on') }}
+        {% else %}
+          false
+        {% endif %}
+      freeze_until_ts: >-
+        {% if freeze_until_entity %}
+          {% set raw = states(freeze_until_entity) %}
+          {% if raw not in ['unknown', 'unavailable', ''] %}
+            {{ as_timestamp(raw) }}
+          {% else %}
+            0
+          {% endif %}
+        {% else %}
+          0
+        {% endif %}
+      freeze_active: "{{ freeze_toggle_active or (freeze_until_ts > now_ts) }}"
+  - if:
+      - condition: template
+        value_template: "{{ freeze_active }}"
+    then:
+      - stop: "Automation frozen"
   - if:
       - condition: template
         value_template: "{{ trigger.id == 'turned_on' or is_state(primary_light_entity, 'on') }}"
