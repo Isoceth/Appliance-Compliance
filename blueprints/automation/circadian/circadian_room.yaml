@@ -198,13 +198,11 @@ trigger:
   - platform: event
     id: freeze_request
     event_type: input_button_pressed
-    event_data:
-      entity_id: !input freeze_button
     enabled: "{{ has_freeze_button }}"
-  - platform: state
+  - platform: template
     id: freeze_toggle_on
-    entity_id: !input freeze_toggle
-    to: "on"
+    value_template: >-
+      {{ freeze_toggle_entity is not none and is_state(freeze_toggle_entity, 'on') }}
     enabled: "{{ has_freeze_toggle }}"
   - platform: state
     id: manual_change
@@ -348,6 +346,11 @@ action:
       - conditions:
           - condition: trigger
             id: freeze_request
+          - condition: template
+            value_template: >-
+              {{ freeze_button_entity is not none
+                 and trigger.event is not none
+                 and trigger.event.data.get('entity_id') == freeze_button_entity }}
         sequence:
           - choose:
               - conditions:
@@ -356,7 +359,7 @@ action:
                 sequence:
                   - service: input_datetime.set_datetime
                     target:
-                      entity_id: !input freeze_until
+                      entity_id: "{{ freeze_until_entity }}"
                     data:
                       timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
           - stop: "Timed freeze started"
@@ -371,7 +374,7 @@ action:
                 sequence:
                   - service: input_datetime.set_datetime
                     target:
-                      entity_id: !input freeze_until
+                      entity_id: "{{ freeze_until_entity }}"
                     data:
                       timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
           - stop: "Manual freeze engaged"
@@ -452,7 +455,7 @@ action:
         sequence:
           - service: input_datetime.set_datetime
             target:
-              entity_id: !input freeze_until
+              entity_id: "{{ freeze_until_entity }}"
             data:
               timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
           - stop: "Manual adjustment freeze"
