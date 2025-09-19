@@ -11,11 +11,6 @@ blueprint:
       description: Area, device, or entities that should receive the circadian settings.
       selector:
         target:
-          area:
-            entity:
-              domain: light
-          device:
-            domain: light
           entity:
             - domain: light
     primary_light:
