@@ -1,0 +1,426 @@
+blueprint:
+  name: Circadian Lighting Room Controller
+  description: >-
+    Dynamically adjusts lights to follow a circadian rhythm with configurable timings,
+    warmth, and brightness. Supports optional freeze helpers to pause adjustments
+    for manual control.
+  domain: automation
+  input:
+    control_target:
+      name: Lights to control
+      description: Area, device, or entities that should receive the circadian settings.
+      selector:
+        target:
+          area:
+            entity:
+              domain: light
+          device:
+            domain: light
+          entity:
+            - domain: light
+    primary_light:
+      name: Primary light entity
+      description: Single light entity used to detect manual activation/state.
+      selector:
+        entity:
+          domain: light
+    morning_start:
+      name: Morning boost begins
+      default: "07:30:00"
+      selector:
+        time: {}
+    morning_peak_end:
+      name: Morning boost ends
+      default: "09:00:00"
+      selector:
+        time: {}
+    evening_fallback:
+      name: Fallback evening start
+      default: "18:30:00"
+      selector:
+        time: {}
+    night_transition:
+      name: Night transition begins
+      default: "22:00:00"
+      selector:
+        time: {}
+    night_full:
+      name: Night mode begins
+      default: "23:00:00"
+      selector:
+        time: {}
+    day_high_pct:
+      name: Daytime brightness (%)
+      default: 100
+      selector:
+        number:
+          unit_of_measurement: "%"
+          min: 1
+          max: 100
+          mode: slider
+    evening_cap_pct:
+      name: Evening start brightness (%)
+      default: 60
+      selector:
+        number:
+          unit_of_measurement: "%"
+          min: 1
+          max: 100
+          mode: slider
+    late_evening_pct:
+      name: 22:00 brightness target (%)
+      default: 20
+      selector:
+        number:
+          unit_of_measurement: "%"
+          min: 1
+          max: 100
+          mode: slider
+    night_pct:
+      name: Night brightness (%)
+      default: 1
+      selector:
+        number:
+          unit_of_measurement: "%"
+          min: 1
+          max: 100
+          mode: slider
+    morning_color_kelvin:
+      name: Morning color temperature (K)
+      default: 6500
+      selector:
+        number:
+          min: 1500
+          max: 6500
+          step: 50
+          mode: slider
+    day_color_kelvin:
+      name: Day color temperature (K)
+      default: 5000
+      selector:
+        number:
+          min: 1500
+          max: 6500
+          step: 50
+          mode: slider
+    evening_start_kelvin:
+      name: Evening start color temperature (K)
+      default: 3200
+      selector:
+        number:
+          min: 1500
+          max: 6500
+          step: 50
+          mode: slider
+    evening_end_kelvin:
+      name: 22:00 color temperature (K)
+      default: 2100
+      selector:
+        number:
+          min: 1500
+          max: 6500
+          step: 50
+          mode: slider
+    night_color_kelvin:
+      name: Night color temperature (K)
+      default: 1600
+      selector:
+        number:
+          min: 1500
+          max: 6500
+          step: 50
+          mode: slider
+    freeze_button:
+      name: Freeze request button (optional)
+      description: Input button helper to request a timed freeze of adjustments.
+      default: null
+      selector:
+        entity:
+          domain: input_button
+    freeze_until:
+      name: Freeze-until helper (optional)
+      description: Input datetime (with date & time) storing when automatic control resumes.
+      default: null
+      selector:
+        entity:
+          domain: input_datetime
+    freeze_toggle:
+      name: Manual freeze toggle (optional)
+      description: Input boolean that, when on, keeps lights frozen indefinitely.
+      default: null
+      selector:
+        entity:
+          domain: input_boolean
+    freeze_duration:
+      name: Timed freeze duration (minutes)
+      default: 60
+      selector:
+        number:
+          min: 1
+          max: 240
+          step: 5
+          mode: slider
+    update_interval_minutes:
+      name: Update cadence (minutes)
+      description: Frequency to reapply settings while active.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          mode: slider
+mode: restart
+max_exceeded: silent
+trigger_variables:
+  freeze_button_entity: !input freeze_button
+  freeze_toggle_entity: !input freeze_toggle
+  has_freeze_button: "{{ freeze_button_entity is not none }}"
+  has_freeze_toggle: "{{ freeze_toggle_entity is not none }}"
+trigger:
+  - platform: state
+    id: turned_on
+    entity_id: !input primary_light
+    to: "on"
+  - platform: time_pattern
+    id: scheduled
+    minutes: "/!input update_interval_minutes"
+  - platform: sun
+    event: sunrise
+    id: sunrise
+  - platform: sun
+    event: sunset
+    id: sunset
+  - platform: time
+    at: !input morning_start
+    id: morning_start
+  - platform: time
+    at: !input night_transition
+    id: night_transition
+  - platform: time
+    at: !input night_full
+    id: night_full
+  - platform: event
+    id: freeze_request
+    event_type: input_button_pressed
+    event_data:
+      entity_id: !input freeze_button
+    enabled: "{{ has_freeze_button }}"
+  - platform: state
+    id: freeze_toggle_on
+    entity_id: !input freeze_toggle
+    to: "on"
+    enabled: "{{ has_freeze_toggle }}"
+  - platform: state
+    id: manual_change
+    entity_id: !input primary_light
+variables:
+  primary_light_entity: !input primary_light
+  freeze_toggle_entity: !input freeze_toggle
+  freeze_until_entity: !input freeze_until
+  freeze_duration_minutes: !input freeze_duration
+  morning_start_time: !input morning_start
+  morning_peak_end_time: !input morning_peak_end
+  night_transition_time: !input night_transition
+  night_full_time: !input night_full
+  fallback_evening_time: !input evening_fallback
+  day_high_pct: !input day_high_pct
+  evening_cap_pct: !input evening_cap_pct
+  late_evening_pct: !input late_evening_pct
+  night_pct: !input night_pct
+  morning_color_kelvin: !input morning_color_kelvin
+  day_color_kelvin: !input day_color_kelvin
+  evening_start_kelvin: !input evening_start_kelvin
+  evening_end_kelvin: !input evening_end_kelvin
+  night_color_kelvin: !input night_color_kelvin
+action:
+  - variables:
+      now_ts: "{{ as_timestamp(now()) }}"
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: freeze_request
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
+                sequence:
+                  - service: input_datetime.set_datetime
+                    target:
+                      entity_id: !input freeze_until
+                    data:
+                      timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
+          - stop: "Timed freeze started"
+      - conditions:
+          - condition: trigger
+            id: freeze_toggle_on
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
+                sequence:
+                  - service: input_datetime.set_datetime
+                    target:
+                      entity_id: !input freeze_until
+                    data:
+                      timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
+          - stop: "Manual freeze engaged"
+      - conditions:
+          - condition: trigger
+            id: manual_change
+          - condition: template
+            value_template: "{{ trigger.from_state is not none }}"
+          - condition: template
+            value_template: "{{ trigger.from_state.state == 'on' and trigger.to_state.state == 'on' }}"
+          - condition: template
+            value_template: "{{ trigger.to_state.context.user_id is not none }}"
+          - condition: template
+            value_template: "{{ freeze_until_entity is not none and freeze_until_entity != '' }}"
+          - condition: template
+            value_template: >-
+              {% set attrs = trigger.to_state.attributes %}
+              {% set prev = trigger.from_state.attributes if trigger.from_state else {} %}
+              {% set watched = ['brightness','color_temp','color_temp_kelvin','hs_color','rgb_color','xy_color'] %}
+              {% set ns = namespace(changed=false) %}
+              {% for key in watched %}
+                {% if attrs.get(key) is not none and attrs.get(key) != prev.get(key) %}
+                  {% set ns.changed = true %}
+                {% endif %}
+              {% endfor %}
+              {{ ns.changed }}
+        sequence:
+          - service: input_datetime.set_datetime
+            target:
+              entity_id: !input freeze_until
+            data:
+              timestamp: "{{ now_ts + (freeze_duration_minutes | int) * 60 }}"
+          - stop: "Manual adjustment freeze"
+  - variables:
+      freeze_toggle_active: >-
+        {% if freeze_toggle_entity %}
+          {{ is_state(freeze_toggle_entity, 'on') }}
+        {% else %}
+          false
+        {% endif %}
+      freeze_until_ts: >-
+        {% if freeze_until_entity %}
+          {% set raw = states(freeze_until_entity) %}
+          {% if raw not in ['unknown', 'unavailable', ''] %}
+            {{ as_timestamp(raw) }}
+          {% else %}
+            0
+          {% endif %}
+        {% else %}
+          0
+        {% endif %}
+      freeze_active: "{{ freeze_toggle_active or (freeze_until_ts > now_ts) }}"
+  - if:
+      - condition: template
+        value_template: "{{ freeze_active }}"
+    then:
+      - stop: "Automation frozen"
+  - variables:
+      bright_start_ts: "{{ as_timestamp(today_at(morning_start_time)) }}"
+      morning_peak_end_ts: "{{ as_timestamp(today_at(morning_peak_end_time)) }}"
+      night_transition_start_ts: "{{ as_timestamp(today_at(night_transition_time)) }}"
+      night_full_ts: "{{ as_timestamp(today_at(night_full_time)) }}"
+      fallback_evening_ts: "{{ as_timestamp(today_at(fallback_evening_time)) }}"
+      todays_sunset_ts: >-
+        {% set next_setting = state_attr('sun.sun', 'next_setting') %}
+        {% if next_setting %}
+          {% set next_dt = as_local(as_datetime(next_setting)) %}
+          {% if next_dt.date() == now().date() %}
+            {{ as_timestamp(next_dt) | float }}
+          {% else %}
+            {% set prev_dt = next_dt - timedelta(days=1) %}
+            {{ as_timestamp(prev_dt) | float }}
+          {% endif %}
+        {% else %}
+          0
+        {% endif %}
+      evening_start_ts: >-
+        {% if todays_sunset_ts | float > 0 %}
+          {{ [todays_sunset_ts | float, fallback_evening_ts | float] | max }}
+        {% else %}
+          {{ fallback_evening_ts | float }}
+        {% endif %}
+      brightness_target: >-
+        {% set night_low = night_pct | int %}
+        {% set day_high = day_high_pct | int %}
+        {% set evening_cap = evening_cap_pct | int %}
+        {% set late_evening_target = late_evening_pct | int %}
+        {% if now_ts >= night_full_ts or now_ts < bright_start_ts %}
+          {{ night_low }}
+        {% elif night_transition_start_ts <= now_ts < night_full_ts %}
+          {% set span = night_full_ts - night_transition_start_ts %}
+          {% if span > 0 %}
+            {% set progress = (now_ts - night_transition_start_ts) / span %}
+            {{ (late_evening_target - (progress * (late_evening_target - night_low))) | round(0, 'floor') }}
+          {% else %}
+            {{ night_low }}
+          {% endif %}
+        {% elif evening_start_ts <= now_ts < night_transition_start_ts %}
+          {% set span = night_transition_start_ts - evening_start_ts %}
+          {% if span > 0 %}
+            {% set progress = (now_ts - evening_start_ts) / span %}
+            {{ (evening_cap - (progress * (evening_cap - late_evening_target))) | round(0, 'floor') }}
+          {% else %}
+            {{ late_evening_target }}
+          {% endif %}
+        {% else %}
+          {{ day_high }}
+        {% endif %}
+      color_temp_target: >-
+        {% set night_color = night_color_kelvin | int %}
+        {% set morning_color = morning_color_kelvin | int %}
+        {% set day_color = day_color_kelvin | int %}
+        {% set evening_start_color = evening_start_kelvin | int %}
+        {% set evening_end_color = evening_end_kelvin | int %}
+        {% if now_ts >= night_full_ts or now_ts < bright_start_ts %}
+          {{ night_color }}
+        {% elif night_transition_start_ts <= now_ts < night_full_ts %}
+          {% set span = night_full_ts - night_transition_start_ts %}
+          {% if span > 0 %}
+            {% set progress = (now_ts - night_transition_start_ts) / span %}
+            {{ (evening_end_color - (progress * (evening_end_color - night_color))) | round(0) }}
+          {% else %}
+            {{ night_color }}
+          {% endif %}
+        {% elif now_ts >= evening_start_ts %}
+          {% set span = night_transition_start_ts - evening_start_ts %}
+          {% if span > 0 %}
+            {% set progress = (now_ts - evening_start_ts) / span %}
+            {{ (evening_start_color + (progress * (evening_end_color - evening_start_color))) | round(0) }}
+          {% else %}
+            {{ evening_end_color }}
+          {% endif %}
+        {% elif now_ts >= morning_peak_end_ts %}
+          {{ day_color }}
+        {% else %}
+          {{ morning_color }}
+        {% endif %}
+      transition_seconds: >-
+        {% if trigger.id == 'turned_on' %}
+          0
+        {% elif night_transition_start_ts <= now_ts < night_full_ts %}
+          120
+        {% elif now_ts >= evening_start_ts %}
+          60
+        {% else %}
+          15
+        {% endif %}
+      brightness_int: "{{ brightness_target | int }}"
+      color_temp_int: "{{ color_temp_target | int }}"
+      transition_int: "{{ transition_seconds | int }}"
+  - if:
+      - condition: template
+        value_template: "{{ trigger.id == 'turned_on' or is_state(primary_light_entity, 'on') }}"
+    then:
+      - service: light.turn_on
+        target: !input control_target
+        data:
+          brightness_pct: "{{ brightness_int }}"
+          color_temp_kelvin: "{{ color_temp_int }}"
+          transition: "{{ transition_int }}"
