@@ -55,7 +55,7 @@ blueprint:
           mode: slider
     evening_cap_pct:
       name: Evening start brightness (%)
-      default: 60
+      default: 80
       selector:
         number:
           unit_of_measurement: "%"
