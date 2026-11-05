@@ -46,6 +46,11 @@ instance uses, update the live copy and call the `automation.reload`
 service, then confirm the automations built on it are not `unavailable` and
 the log shows no blueprint errors.
 
+## Landing changes
+
+Finished work lands directly on `main`, without a pull request, and is
+pushed to origin as part of the job.
+
 ## What goes into Git
 
 This repository is public, and pushed history is permanent. Commit only
