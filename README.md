@@ -1,14 +1,41 @@
 # Appliance Compliance
 
-This repository collects my Home Assistant configuration pieces that will be published to GitHub for blueprint imports and future automations. It is intended to stay in sync with the setup running on my home system.
+Home Assistant automation blueprints, written for and running on a real
+house.
 
-## Contents
-- `automations/` – YAML automations that power routine behaviors.
-- `blueprints/` – shareable blueprints that can be imported into Home Assistant.
+## Blueprints
 
-## Usage
-1. Clone the repo locally or download the files into your Home Assistant config directory.
-2. Import any blueprint YAML via the Home Assistant UI to enable quick setup.
-3. Track changes here before pushing updates upstream so the live system stays consistent.
+### Daylight-Aware Presence Light
 
-Feel free to fork or adapt the configurations to suit your own installation.
+[![Open your Home Assistant instance and show the blueprint import dialog with this blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FIsoceth%2FAppliance-Compliance%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fpresence%2Fpresence_daylight_light.yaml)
+
+`blueprints/automation/presence/presence_daylight_light.yaml`
+
+Keeps a light on while a presence sensor (a desk, a computer in use)
+reports someone there and the daylight is too poor to work by.
+
+- **Daylight** is estimated from the sun's elevation and the weather
+  entity's cloud cover, rain, snow and fog. Two thresholds, in outdoor lux,
+  switch the light on and off.
+- **Colour and brightness** follow the clock, not the sunset. On a winter
+  afternoon the light comes on at its day settings, and evening warmth
+  waits for the evening.
+- **Manual changes** made through Home Assistant or a voice assistant are
+  left alone until presence ends. Leaving always switches the light off.
+
+### Circadian Lighting Room Controller
+
+[![Open your Home Assistant instance and show the blueprint import dialog with this blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FIsoceth%2FAppliance-Compliance%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fcircadian%2Fcircadian_room.yaml)
+
+`blueprints/automation/circadian/circadian_room.yaml`
+
+Adjusts a room's lights through the day while they are on: a cool morning
+boost, day settings, and a warm, dimming evening that begins at sunset or a
+fallback time, whichever is later. Optional helpers can pause it, on request
+or automatically after a manual adjustment.
+
+## Installing
+
+Use the import button above. You can also paste the file's GitHub URL into
+**Settings → Automations & Scenes → Blueprints → Import Blueprint**. Then
+create an automation from the blueprint and fill in its inputs.

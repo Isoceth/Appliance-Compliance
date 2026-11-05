@@ -1,0 +1,294 @@
+blueprint:
+  name: Daylight-Aware Presence Light
+  author: Isoceth
+  description: >-
+    Keeps a light on while a presence sensor reports someone there and the
+    daylight outside is too poor to work by, and switches it off when they
+    leave.
+
+
+    **Daylight** is an estimate of outdoor illuminance: a clear-sky figure
+    from the sun's elevation, reduced for cloud cover (Kasten–Czeplak) and
+    for rain, snow or fog from the weather entity. The light comes on when
+    the estimate falls below the lower threshold and goes off once it rises
+    above the upper one, so a bright day keeps it off and a dark, wet one
+    keeps it on.
+
+
+    **Colour and brightness** follow the clock rather than the sun, so an
+    early winter sunset does not bring evening lighting at four in the
+    afternoon. Day settings hold from the end of the morning ramp until
+    wind-down, fade to the evening settings, then to the night settings,
+    which hold until the next morning ramp.
+
+
+    **Manual control:** a change made to the light through Home Assistant
+    (the UI, a voice assistant) while someone is present is left alone until
+    presence ends. Leaving always switches the light off.
+  domain: automation
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    devices:
+      name: Light and presence
+      input:
+        light_entity:
+          name: Light
+          selector:
+            entity:
+              domain: light
+        presence_entity:
+          name: Presence sensor
+          description: >-
+            On while someone is there. Any other state, including
+            unavailable, counts as absent.
+          selector:
+            entity:
+              domain: binary_sensor
+    daylight:
+      name: Daylight
+      input:
+        weather_entity:
+          name: Weather
+          description: >-
+            Supplies cloud cover (its `cloud_coverage` attribute, or the
+            condition when that is missing) and rain, snow or fog.
+          selector:
+            entity:
+              domain: weather
+        on_below_lux:
+          name: Switch on below (lux, outdoors)
+          description: >-
+            For scale, with the sun 23° up: about 37,000 lux under a clear
+            sky, 9,000 overcast, and 3,000 in heavy rain.
+          default: 3000
+          selector:
+            number:
+              min: 100
+              max: 50000
+              step: 100
+              unit_of_measurement: lx
+              mode: box
+        off_above_lux:
+          name: Switch off above (lux, outdoors)
+          description: Keep this above the switch-on level so the light does not flap.
+          default: 5000
+          selector:
+            number:
+              min: 100
+              max: 50000
+              step: 100
+              unit_of_measurement: lx
+              mode: box
+    schedule:
+      name: Schedule
+      description: Times must run in this order through the day.
+      collapsed: true
+      input:
+        morning_time:
+          name: Morning ramp begins (night settings until here)
+          default: "06:00:00"
+          selector:
+            time: {}
+        day_time:
+          name: Day settings reached
+          default: "08:00:00"
+          selector:
+            time: {}
+        wind_down_time:
+          name: Wind-down begins (day settings until here)
+          default: "19:00:00"
+          selector:
+            time: {}
+        evening_time:
+          name: Evening settings reached
+          default: "21:30:00"
+          selector:
+            time: {}
+        night_time:
+          name: Night settings reached
+          default: "23:30:00"
+          selector:
+            time: {}
+    settings:
+      name: Colour and brightness
+      description: The light clamps colour temperatures to the range it supports.
+      collapsed: true
+      input:
+        day_kelvin:
+          name: Day colour temperature
+          default: 4000
+          selector: &kelvin
+            number:
+              min: 1500
+              max: 6500
+              step: 50
+              unit_of_measurement: K
+              mode: slider
+        day_brightness:
+          name: Day brightness
+          default: 100
+          selector: &percent
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: "%"
+              mode: slider
+        evening_kelvin:
+          name: Evening colour temperature
+          default: 2700
+          selector: *kelvin
+        evening_brightness:
+          name: Evening brightness
+          default: 75
+          selector: *percent
+        night_kelvin:
+          name: Night colour temperature
+          default: 2200
+          selector: *kelvin
+        night_brightness:
+          name: Night brightness
+          default: 40
+          selector: *percent
+
+mode: queued
+max: 5
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input presence_entity
+    to: "on"
+    id: arrived
+  - trigger: state
+    entity_id: !input presence_entity
+    from: "on"
+    id: left
+  - trigger: time_pattern
+    minutes: "/5"
+    id: tick
+  - trigger: homeassistant
+    event: start
+    id: tick
+
+variables:
+  light_entity: !input light_entity
+  presence_entity: !input presence_entity
+  weather_entity: !input weather_entity
+  on_below_lux: !input on_below_lux
+  off_above_lux: !input off_above_lux
+  schedule:
+    - at: !input morning_time
+      kelvin: !input night_kelvin
+      brightness: !input night_brightness
+    - at: !input day_time
+      kelvin: !input day_kelvin
+      brightness: !input day_brightness
+    - at: !input wind_down_time
+      kelvin: !input day_kelvin
+      brightness: !input day_brightness
+    - at: !input evening_time
+      kelvin: !input evening_kelvin
+      brightness: !input evening_brightness
+    - at: !input night_time
+      kelvin: !input night_kelvin
+      brightness: !input night_brightness
+
+actions:
+  - if:
+      - condition: trigger
+        id: left
+    then:
+      - action: light.turn_off
+        target:
+          entity_id: "{{ light_entity }}"
+        data:
+          transition: 3
+      - stop: Presence ended
+  - condition: state
+    entity_id: !input presence_entity
+    state: "on"
+  - variables:
+      # A change carrying a user (the UI, a voice assistant) made since presence
+      # began is someone's choice; the light is left alone until they leave.
+      manual_override: >-
+        {% set light = states[light_entity] %}
+        {% set presence = states[presence_entity] %}
+        {{ light is not none and presence is not none
+           and light.context.user_id is not none
+           and light.last_updated >= presence.last_changed }}
+  - condition: template
+    value_template: "{{ not manual_override }}"
+  - variables:
+      outdoor_lux: >-
+        {% set elevation = state_attr('sun.sun', 'elevation') | float(-90) %}
+        {% if elevation < -6 %}
+          0
+        {% else %}
+          {# Clear-sky illuminance from solar elevation, with an air-mass term. #}
+          {% set u = sin(elevation * pi / 180) %}
+          {% set x = 753.66156 %}
+          {% set s = asin(x * cos(elevation * pi / 180) / (x + 1)) %}
+          {% set air_mass = x * (cos(s) - u) + cos(s) %}
+          {% set clear_sky = 133775 * (e ** (-0.2 * air_mass) * u
+               + 0.0289 * e ** (-0.042 * air_mass)
+                 * (1 + (elevation + 90) * u / 57.29577951)) %}
+          {% set condition = states(weather_entity) %}
+          {% set cover = state_attr(weather_entity, 'cloud_coverage') %}
+          {% if cover is none %}
+            {% set cover = {'sunny': 0, 'clear-night': 0, 'windy': 25,
+                            'partlycloudy': 50, 'windy-variant': 50}.get(condition, 100) %}
+          {% endif %}
+          {% set cloud = 1 - 0.75 * ((cover | float(100)) / 100) ** 3.4 %}
+          {% set weather = {'rainy': 0.6, 'snowy': 0.6, 'lightning': 0.6,
+                            'snowy-rainy': 0.5, 'hail': 0.5, 'fog': 0.5,
+                            'exceptional': 0.5, 'pouring': 0.35,
+                            'lightning-rainy': 0.35}.get(condition, 1) %}
+          {{ [clear_sky * cloud * weather, 0] | max | round(0) }}
+        {% endif %}
+      light_is_on: "{{ is_state(light_entity, 'on') }}"
+      light_needed: >-
+        {{ outdoor_lux < on_below_lux
+           or (light_is_on and outdoor_lux < off_above_lux) }}
+      lighting: >-
+        {% set n = now() %}
+        {% set minute = n.hour * 60 + n.minute + n.second / 60 %}
+        {% set ns = namespace(kelvin=0, brightness=0) %}
+        {% for i in range(schedule | length) %}
+          {% set a = schedule[i] %}
+          {% set z = schedule[(i + 1) % (schedule | length)] %}
+          {% set a_parts = a.at.split(':') %}
+          {% set z_parts = z.at.split(':') %}
+          {% set start = a_parts[0] | int * 60 + a_parts[1] | int %}
+          {% set end = z_parts[0] | int * 60 + z_parts[1] | int %}
+          {% if end <= start %}{% set end = end + 1440 %}{% endif %}
+          {% set at = minute if minute >= start else minute + 1440 %}
+          {% if start <= at < end %}
+            {% set f = (at - start) / (end - start) %}
+            {% set ns.kelvin = a.kelvin + (z.kelvin - a.kelvin) * f %}
+            {% set ns.brightness = a.brightness + (z.brightness - a.brightness) * f %}
+          {% endif %}
+        {% endfor %}
+        {{ {'kelvin': ns.kelvin | round(0) | int,
+            'brightness': ns.brightness | round(0) | int} }}
+  - if:
+      - condition: template
+        value_template: "{{ light_needed }}"
+    then:
+      - action: light.turn_on
+        target:
+          entity_id: "{{ light_entity }}"
+        data:
+          color_temp_kelvin: "{{ lighting.kelvin }}"
+          brightness_pct: "{{ lighting.brightness }}"
+          transition: "{{ 10 if light_is_on else 2 }}"
+    else:
+      - if:
+          - condition: template
+            value_template: "{{ light_is_on }}"
+        then:
+          - action: light.turn_off
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              transition: 10
