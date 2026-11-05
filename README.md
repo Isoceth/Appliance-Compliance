@@ -11,17 +11,21 @@ house.
 
 `blueprints/automation/presence/presence_daylight_light.yaml`
 
-Keeps a light on while a presence sensor (a desk, a computer in use)
-reports someone there and the daylight is too poor to work by.
+Keeps a light on while a presence sensor reports someone there and the
+daylight is too poor. The sensor can be a motion sensor, with a hold time
+after the last movement, or a computer reporting that it is in use.
 
-- **Daylight** is estimated from the sun's elevation and the weather
-  entity's cloud cover, rain, snow and fog. Two thresholds, in outdoor lux,
-  switch the light on and off.
+- **Daylight** comes from an illuminance sensor in the room when you have
+  one. The sensor sees the light it controls, so its reading only decides
+  when to switch on. Otherwise daylight is estimated from the sun's
+  elevation and the weather entity's cloud cover, rain, snow and fog, and
+  two thresholds in outdoor lux switch the light on and off.
 - **Colour and brightness** follow the clock, not the sunset. On a winter
   afternoon the light comes on at its day settings, and evening warmth
   waits for the evening.
 - **Manual changes** made through Home Assistant or a voice assistant are
-  left alone until presence ends. Leaving always switches the light off.
+  left alone until presence ends. Once presence ends and the hold time has
+  passed, the light always switches off.
 
 ### Circadian Lighting Room Controller
 
