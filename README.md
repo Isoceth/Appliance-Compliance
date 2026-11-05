@@ -15,6 +15,10 @@ Keeps a light on while a presence sensor reports someone there and the
 daylight is too poor. The sensor can be a motion sensor, with a hold time
 after the last movement, or a computer reporting that it is in use.
 
+Without a presence sensor, it never switches the light on or off. A
+session runs from when someone switches the light on until it is switched
+off, and the light follows the schedule in between.
+
 - **Daylight** comes from an illuminance sensor in the room when you have
   one. The sensor sees the light it controls, so its reading only decides
   when to switch on. Otherwise daylight is estimated from the sun's
@@ -24,8 +28,8 @@ after the last movement, or a computer reporting that it is in use.
   afternoon the light comes on at its day settings, and evening warmth
   waits for the evening.
 - **Manual changes** made through Home Assistant or a voice assistant are
-  left alone until presence ends. Once presence ends and the hold time has
-  passed, the light always switches off.
+  left alone until the session ends. With a presence sensor, the light
+  always switches off once presence ends and the hold time has passed.
 
 ### Circadian Lighting Room Controller
 

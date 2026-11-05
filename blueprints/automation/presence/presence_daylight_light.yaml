@@ -6,6 +6,13 @@ blueprint:
     daylight is too poor, and switches it off when they leave.
 
 
+    **Without a presence sensor** the automation never switches the light
+    on or off: whoever switches it on starts the session, the light takes
+    the schedule's colour and brightness at once and follows it while on,
+    and switching it off ends the session. The daylight inputs then do
+    nothing.
+
+
     **Daylight** comes from an illuminance sensor in the room when one is
     given. Because that sensor also sees the light it controls, its reading
     decides only whether to switch the light on; once on, the light stays on
@@ -29,9 +36,9 @@ blueprint:
 
 
     **Manual control:** a change made to the light through Home Assistant
-    (the UI, a voice assistant) while someone is present is left alone until
-    presence ends. Leaving always switches the light off, after the hold
-    time.
+    (the UI, a voice assistant) during a session is left alone until the
+    session ends. With a presence sensor, the end of presence always
+    switches the light off, after the hold time.
   domain: automation
   homeassistant:
     min_version: 2024.10.0
@@ -45,10 +52,12 @@ blueprint:
             entity:
               domain: light
         presence_entity:
-          name: Presence sensor
+          name: Presence sensor (optional)
           description: >-
             On while someone is there. Any other state, including
-            unavailable, counts as absent.
+            unavailable, counts as absent. Leave empty to have the light's
+            own switching define the session.
+          default: null
           selector:
             entity:
               domain: binary_sensor
@@ -199,17 +208,26 @@ mode: queued
 max: 5
 max_exceeded: silent
 
+trigger_variables:
+  light_entity: !input light_entity
+  presence_entity: !input presence_entity
+
+# Presence is optional, so it is watched through templates; a state trigger
+# cannot take an empty entity.
 triggers:
-  - trigger: state
-    entity_id: !input presence_entity
-    to: "on"
+  - trigger: template
+    value_template: "{{ presence_entity is not none and is_state(presence_entity, 'on') }}"
     id: arrived
-  - trigger: state
-    entity_id: !input presence_entity
-    from: "on"
+  - trigger: template
+    value_template: "{{ presence_entity is not none and not is_state(presence_entity, 'on') }}"
     for:
       minutes: !input presence_hold_minutes
     id: left
+  - trigger: state
+    entity_id: !input light_entity
+    to: "on"
+    id: turned_on
+    enabled: "{{ presence_entity is none }}"
   - trigger: time_pattern
     minutes: "/5"
     id: tick
@@ -218,8 +236,6 @@ triggers:
     id: tick
 
 variables:
-  light_entity: !input light_entity
-  presence_entity: !input presence_entity
   illuminance_entity: !input illuminance_entity
   illuminance_on_below: !input illuminance_on_below
   weather_entity: !input weather_entity
@@ -253,18 +269,23 @@ actions:
         data:
           transition: 3
       - stop: Presence ended
-  - condition: state
-    entity_id: !input presence_entity
-    state: "on"
+  # A session runs while presence is on or, without a presence sensor, while
+  # the light is on.
+  - condition: template
+    value_template: >-
+      {{ is_state(presence_entity, 'on') if presence_entity
+         else is_state(light_entity, 'on') }}
   - variables:
-      # A change carrying a user (the UI, a voice assistant) made since presence
-      # began is someone's choice; the light is left alone until they leave.
+      # A change carrying a user (the UI, a voice assistant) made after the
+      # session began is someone's choice; the light is left alone until the
+      # session ends. Switching the light on is what begins a session without
+      # presence, so that change does not count.
       manual_override: >-
         {% set light = states[light_entity] %}
-        {% set presence = states[presence_entity] %}
-        {{ light is not none and presence is not none
+        {% set session = states[presence_entity] if presence_entity else light %}
+        {{ light is not none and session is not none
            and light.context.user_id is not none
-           and light.last_updated >= presence.last_changed }}
+           and light.last_updated > session.last_changed }}
   - condition: template
     value_template: "{{ not manual_override }}"
   - variables:
@@ -308,7 +329,9 @@ actions:
           {{ sensor.state | float }}
         {% endif %}
       light_needed: >-
-        {% if illuminance_entity and light_is_on %}
+        {% if not presence_entity %}
+          {{ light_is_on }}
+        {% elif illuminance_entity and light_is_on %}
           {{ true }}
         {% elif measured_lux is not none %}
           {{ measured_lux < illuminance_on_below }}
@@ -347,7 +370,7 @@ actions:
         data:
           color_temp_kelvin: "{{ lighting.kelvin }}"
           brightness_pct: "{{ lighting.brightness }}"
-          transition: "{{ 10 if light_is_on else 1 }}"
+          transition: "{{ 10 if light_is_on and trigger.id != 'turned_on' else 1 }}"
     else:
       - if:
           - condition: template
