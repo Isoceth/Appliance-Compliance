@@ -1,0 +1,13 @@
+# OS and editor cruft
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# Machine-local configuration and guidance
+*.local
+*.local.*
+
+# Environment files
+.env
+.env.*
