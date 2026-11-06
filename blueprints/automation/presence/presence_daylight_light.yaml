@@ -389,7 +389,10 @@ actions:
               transition: "{{ 1 if trigger.id == 'turned_on' else 10 }}"
         # Switching on takes the colour at the lowest brightness, then fades up
         # on brightness alone: Zigbee2MQTT drops the brightness transition for
-        # IKEA bulbs when the same command sets colour temperature.
+        # IKEA bulbs when the same command sets colour temperature. The pause
+        # lets the colour command reach the bulb first, because Zigbee2MQTT
+        # can interleave two messages, and a colour command arriving
+        # mid-fade cancels an IKEA bulb's fade.
         else:
           - action: light.turn_on
             target:
@@ -398,6 +401,8 @@ actions:
               color_temp_kelvin: "{{ lighting.kelvin }}"
               brightness: 1
               transition: 0
+          - delay:
+              seconds: 1
           - action: light.turn_on
             target:
               entity_id: "{{ light_entity }}"
