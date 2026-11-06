@@ -203,6 +203,17 @@ blueprint:
           name: Night brightness
           default: 40
           selector: *percent
+        fade_on_seconds:
+          name: Switch-on fade
+          description: How long the light takes to fade up when the automation switches it on.
+          default: 1
+          selector:
+            number:
+              min: 0
+              max: 10
+              step: 1
+              unit_of_measurement: s
+              mode: slider
 
 mode: queued
 max: 5
@@ -241,6 +252,7 @@ variables:
   weather_entity: !input weather_entity
   on_below_lux: !input on_below_lux
   off_above_lux: !input off_above_lux
+  fade_on_seconds: !input fade_on_seconds
   schedule:
     - at: !input morning_time
       kelvin: !input night_kelvin
@@ -364,13 +376,34 @@ actions:
       - condition: template
         value_template: "{{ light_needed }}"
     then:
-      - action: light.turn_on
-        target:
-          entity_id: "{{ light_entity }}"
-        data:
-          color_temp_kelvin: "{{ lighting.kelvin }}"
-          brightness_pct: "{{ lighting.brightness }}"
-          transition: "{{ 10 if light_is_on and trigger.id != 'turned_on' else 1 }}"
+      - if:
+          - condition: template
+            value_template: "{{ light_is_on }}"
+        then:
+          - action: light.turn_on
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              color_temp_kelvin: "{{ lighting.kelvin }}"
+              brightness_pct: "{{ lighting.brightness }}"
+              transition: "{{ 1 if trigger.id == 'turned_on' else 10 }}"
+        # Switching on takes the colour at the lowest brightness, then fades up
+        # on brightness alone: Zigbee2MQTT drops the brightness transition for
+        # IKEA bulbs when the same command sets colour temperature.
+        else:
+          - action: light.turn_on
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              color_temp_kelvin: "{{ lighting.kelvin }}"
+              brightness: 1
+              transition: 0
+          - action: light.turn_on
+            target:
+              entity_id: "{{ light_entity }}"
+            data:
+              brightness_pct: "{{ lighting.brightness }}"
+              transition: "{{ fade_on_seconds }}"
     else:
       - if:
           - condition: template
