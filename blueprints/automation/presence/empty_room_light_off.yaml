@@ -1,0 +1,119 @@
+blueprint:
+  name: Empty-Room Light-Off Retry
+  author: Isoceth
+  description: >-
+    Makes sure a light goes off once its room is empty, even when the
+    command to switch it off is lost on a weak Zigbee or Wi-Fi link. It runs
+    alongside the automation that switches the light, which carries on doing
+    its own switching; this one only steps in when that automation's
+    switch-off did not land.
+
+
+    Once the presence sensor has read off for the set time, a light still
+    reporting on is sent off again every 30 seconds until it reports off,
+    for up to 15 minutes. A light that drops off the network and comes back
+    reporting on, while the room has been empty that long, is switched off
+    as well.
+
+
+    The presence sensor must read off: unavailable does not count as empty,
+    so a sensor dropping out never switches anyone's light off. A light
+    switched on by hand in a room that is already empty is left alone until
+    someone comes and goes, or the light drops off the network and returns.
+  domain: automation
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    light_entity:
+      name: Light
+      selector:
+        entity:
+          domain:
+            - light
+            - switch
+    presence_entity:
+      name: Presence sensor
+      description: The sensor the lighting automation switches the light by.
+      selector:
+        entity:
+          domain: binary_sensor
+    empty_minutes:
+      name: Room empty for
+      description: >-
+        How long the presence sensor must read off before the light is
+        checked. Set it a minute or so longer than the lighting automation's
+        own delay, so that automation has had its turn first.
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          unit_of_measurement: min
+          mode: box
+    lighting_automation:
+      name: Lighting automation (optional)
+      description: >-
+        Retries happen only while this automation is on, so pausing it (for
+        a holiday mode, say) pauses them too.
+      default: null
+      selector:
+        entity:
+          domain: automation
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input presence_entity
+    to: "off"
+    for:
+      minutes: !input empty_minutes
+  - trigger: state
+    entity_id: !input light_entity
+    from:
+      - unavailable
+      - unknown
+    to: "on"
+
+variables:
+  light_entity: !input light_entity
+  presence_entity: !input presence_entity
+  lighting_automation: !input lighting_automation
+
+conditions:
+  - condition: state
+    entity_id: !input light_entity
+    state: "on"
+  - condition: state
+    entity_id: !input presence_entity
+    state: "off"
+    for:
+      minutes: !input empty_minutes
+  - "{{ lighting_automation is none or is_state(lighting_automation, 'on') }}"
+
+# Thirty rounds of up to 30 seconds give the light 15 minutes to answer.
+# Zigbee2MQTT marks a router unavailable after 10 minutes of silence by
+# default, so a light still unreachable when the retries run out is usually
+# unavailable by then, and the reconnect trigger catches it on its return.
+actions:
+  - repeat:
+      sequence:
+        - if:
+            - condition: state
+              entity_id: !input light_entity
+              state: "on"
+          then:
+            - action: homeassistant.turn_off
+              target:
+                entity_id: "{{ light_entity }}"
+        - wait_template: "{{ is_state(light_entity, 'off') }}"
+          timeout: 30
+      until:
+        - condition: or
+          conditions:
+            - "{{ is_state(light_entity, 'off') }}"
+            - "{{ is_state(presence_entity, 'on') }}"
+            - "{{ lighting_automation is not none and not is_state(lighting_automation, 'on') }}"
+            - "{{ repeat.index >= 30 }}"
