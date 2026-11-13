@@ -26,7 +26,8 @@ off, and the light follows the schedule in between.
   two thresholds in outdoor lux switch the light on and off.
 - **Colour and brightness** follow the clock, not the sunset. On a winter
   afternoon the light comes on at its day settings, and evening warmth
-  waits for the evening.
+  waits for the evening. Optional separate evening colour times let the
+  light warm earlier while brightness follows its own schedule.
 - **Manual changes** made through Home Assistant or a voice assistant are
   left alone until the session ends. With a presence sensor, the light
   always switches off once presence ends and the hold time has passed.

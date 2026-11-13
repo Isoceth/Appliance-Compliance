@@ -35,6 +35,11 @@ blueprint:
     which hold until the next morning ramp.
 
 
+    An optional colour timetable brings evening warmth forward while
+    brightness keeps its own schedule. Both timetables follow the clock,
+    so an early winter sunset does not bring night settings forward.
+
+
     **Manual control:** a change made to the light through Home Assistant
     (the UI, a voice assistant) during a session is left alone until the
     session ends. With a presence sensor, the end of presence always
@@ -134,8 +139,10 @@ blueprint:
               unit_of_measurement: lx
               mode: box
     schedule:
-      name: Schedule
-      description: Times must run in this order through the day.
+      name: Brightness and shared colour times
+      description: >-
+        Times must run in this order through the day. Colour follows these
+        times unless separate evening colour times are enabled.
       collapsed: true
       input:
         morning_time:
@@ -161,6 +168,34 @@ blueprint:
         night_time:
           name: Night settings reached
           default: "23:30:00"
+          selector:
+            time: {}
+    colour_schedule:
+      name: Separate evening colour times
+      description: >-
+        Warm the light earlier without dimming it earlier. Times must run
+        in order after the day settings are reached. Morning times and
+        colour temperatures come from the main schedule and settings.
+      collapsed: true
+      input:
+        separate_colour_schedule:
+          name: Use separate evening colour times
+          default: false
+          selector:
+            boolean: {}
+        colour_wind_down_time:
+          name: Colour wind-down begins
+          default: "17:00:00"
+          selector:
+            time: {}
+        colour_evening_time:
+          name: Evening colour reached
+          default: "19:00:00"
+          selector:
+            time: {}
+        colour_night_time:
+          name: Night colour reached
+          default: "20:30:00"
           selector:
             time: {}
     settings:
@@ -253,6 +288,7 @@ variables:
   on_below_lux: !input on_below_lux
   off_above_lux: !input off_above_lux
   fade_on_seconds: !input fade_on_seconds
+  separate_colour_schedule: !input separate_colour_schedule
   schedule:
     - at: !input morning_time
       kelvin: !input night_kelvin
@@ -269,6 +305,17 @@ variables:
     - at: !input night_time
       kelvin: !input night_kelvin
       brightness: !input night_brightness
+  colour_schedule:
+    - at: !input morning_time
+      kelvin: !input night_kelvin
+    - at: !input day_time
+      kelvin: !input day_kelvin
+    - at: !input colour_wind_down_time
+      kelvin: !input day_kelvin
+    - at: !input colour_evening_time
+      kelvin: !input evening_kelvin
+    - at: !input colour_night_time
+      kelvin: !input night_kelvin
 
 actions:
   - if:
@@ -355,20 +402,28 @@ actions:
         {% set n = now() %}
         {% set minute = n.hour * 60 + n.minute + n.second / 60 %}
         {% set ns = namespace(kelvin=0, brightness=0) %}
-        {% for i in range(schedule | length) %}
-          {% set a = schedule[i] %}
-          {% set z = schedule[(i + 1) % (schedule | length)] %}
-          {% set a_parts = a.at.split(':') %}
-          {% set z_parts = z.at.split(':') %}
-          {% set start = a_parts[0] | int * 60 + a_parts[1] | int %}
-          {% set end = z_parts[0] | int * 60 + z_parts[1] | int %}
-          {% if end <= start %}{% set end = end + 1440 %}{% endif %}
-          {% set at = minute if minute >= start else minute + 1440 %}
-          {% if start <= at < end %}
-            {% set f = (at - start) / (end - start) %}
-            {% set ns.kelvin = a.kelvin + (z.kelvin - a.kelvin) * f %}
-            {% set ns.brightness = a.brightness + (z.brightness - a.brightness) * f %}
-          {% endif %}
+        {% for setting in ['kelvin', 'brightness'] %}
+          {% set points = colour_schedule
+               if setting == 'kelvin' and separate_colour_schedule else schedule %}
+          {% for i in range(points | length) %}
+            {% set a = points[i] %}
+            {% set z = points[(i + 1) % (points | length)] %}
+            {% set a_parts = a.at.split(':') %}
+            {% set z_parts = z.at.split(':') %}
+            {% set start = a_parts[0] | int * 60 + a_parts[1] | int %}
+            {% set end = z_parts[0] | int * 60 + z_parts[1] | int %}
+            {% if end <= start %}{% set end = end + 1440 %}{% endif %}
+            {% set at = minute if minute >= start else minute + 1440 %}
+            {% if start <= at < end %}
+              {% set f = (at - start) / (end - start) %}
+              {% set value = a[setting] + (z[setting] - a[setting]) * f %}
+              {% if setting == 'kelvin' %}
+                {% set ns.kelvin = value %}
+              {% else %}
+                {% set ns.brightness = value %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
         {% endfor %}
         {{ {'kelvin': ns.kelvin | round(0) | int,
             'brightness': ns.brightness | round(0) | int} }}
